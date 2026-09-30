@@ -15,26 +15,37 @@ FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
 
 def get_active_member_ids():
     print("=== メンバーリストを自動取得しています ===")
-    url = f"{BASE_URL}/s/n46/search/artist"
+    
+    # 複数ページから念入りにIDを収集します
+    urls_to_check = [
+        f"{BASE_URL}/s/n46/search/artist",
+        f"{BASE_URL}/s/n46/diary/MEMBER/list"
+    ]
     member_ids = []
-    try:
-        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-        
-        # メンバー一覧ページから各メンバーのプロフィールURLを探してIDを抽出
-        for a in soup.find_all("a"):
-            href = a.get("href", "")
-            if "/s/n46/artist/" in href:
-                m = re.search(r'/artist/(\d+)', href)
-                if m:
-                    mid = m.group(1)
-                    if mid not in member_ids:
-                        member_ids.append(mid)
-    except Exception as e:
-        print(f"メンバーリストの取得エラー: {e}")
-        
-    print(f"{len(member_ids)}人のメンバーを検出しました。")
+    
+    for url in urls_to_check:
+        try:
+            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+            res.raise_for_status()
+            
+            # BeautifulSoup(タグ解析)を使わず、生のHTMLから直接5桁のIDパターンを正規表現で抽出
+            ids_artist = re.findall(r'/artist/(\d{5})', res.text)
+            ids_ct = re.findall(r'[\?&]ct=(\d{5})', res.text)
+            ids_json = re.findall(r'"member_id":"(\d{5})"', res.text)
+            ids_member = re.findall(r'"member":"(\d{5})"', res.text)
+            
+            all_found = ids_artist + ids_ct + ids_json + ids_member
+            
+            for mid in all_found:
+                # 10001等の10000番台は運営スタッフや全体お知らせ用なので除外
+                if mid not in member_ids and not mid.startswith("10") and mid != "00000":
+                    member_ids.append(mid)
+        except Exception as e:
+            print(f"取得エラー({url}): {e}")
+            
+    # 見やすくするためにソート
+    member_ids.sort()
+    print(f"{len(member_ids)}人のメンバーを検出しました: {member_ids}")
     return member_ids
 
 def parse_date_to_iso(date_str):
@@ -180,7 +191,6 @@ def main():
     print("=== 全メンバーのRSS生成を開始します ===")
     os.makedirs("feeds", exist_ok=True)
     
-    # メンバーIDを動的に取得
     member_ids = get_active_member_ids()
     if not member_ids:
         print("メンバーIDが取得できなかったため、処理を終了します。")
