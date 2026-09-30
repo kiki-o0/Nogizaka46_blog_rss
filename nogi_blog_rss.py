@@ -10,43 +10,38 @@ from bs4 import BeautifulSoup
 
 
 BASE_URL = "https://www.nogizaka46.com"
-# リポジトリ名に合わせたGitHub PagesのベースURL
 FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
 
 def get_active_member_ids():
     print("=== メンバーリストを自動取得しています ===")
     
-    # 複数ページから念入りにIDを収集します
     urls_to_check = [
         f"{BASE_URL}/s/n46/search/artist",
-        f"{BASE_URL}/s/n46/diary/MEMBER/list"
+        f"{BASE_URL}/s/n46/diary/MEMBER"
     ]
-    member_ids = []
+    member_ids = set()
     
     for url in urls_to_check:
         try:
             res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
             res.raise_for_status()
             
-            # BeautifulSoup(タグ解析)を使わず、生のHTMLから直接5桁のIDパターンを正規表現で抽出
-            ids_artist = re.findall(r'/artist/(\d{5})', res.text)
-            ids_ct = re.findall(r'[\?&]ct=(\d{5})', res.text)
-            ids_json = re.findall(r'"member_id":"(\d{5})"', res.text)
-            ids_member = re.findall(r'"member":"(\d{5})"', res.text)
+            patterns = [
+                r'"code"\s*:\s*"?(\d{5})"?',
+                r'/s/n46/artist/(\d{5})',
+                r'[\?&]ct=(\d{5})'
+            ]
             
-            all_found = ids_artist + ids_ct + ids_json + ids_member
-            
-            for mid in all_found:
-                # 10001等の10000番台は運営スタッフや全体お知らせ用なので除外
-                if mid not in member_ids and not mid.startswith("10") and mid != "00000":
-                    member_ids.append(mid)
+            for p in patterns:
+                for mid in re.findall(p, res.text):
+                    if not mid.startswith("10") and mid != "00000":
+                        member_ids.add(mid)
         except Exception as e:
             print(f"取得エラー({url}): {e}")
             
-    # 見やすくするためにソート
-    member_ids.sort()
-    print(f"{len(member_ids)}人のメンバーを検出しました: {member_ids}")
-    return member_ids
+    member_list = sorted(list(member_ids))
+    print(f"{len(member_list)}人のメンバーを検出しました: {member_list}")
+    return member_list
 
 def parse_date_to_iso(date_str):
     m = re.findall(r'\d+', date_str)
