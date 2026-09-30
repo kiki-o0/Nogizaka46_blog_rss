@@ -10,14 +10,32 @@ from bs4 import BeautifulSoup
 
 
 BASE_URL = "https://www.nogizaka46.com"
-# GitHub PagesのベースURL（必要に応じてリポジトリ名を変更してください）
-FEED_BASE_URL = "https://kiki-o0.github.io/nogizaka46blog-bot/"
+# リポジトリ名に合わせたGitHub PagesのベースURL
+FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
 
-# 乃木坂46のメンバーIDリスト
-# ※乃木坂46のIDは5桁の数字です（例: 井上和=55389）。取得したいメンバーのIDに変更してください。
-MEMBER_IDS = [
-    "55389",
-]
+def get_active_member_ids():
+    print("=== メンバーリストを自動取得しています ===")
+    url = f"{BASE_URL}/s/n46/search/artist"
+    member_ids = []
+    try:
+        res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+        
+        # メンバー一覧ページから各メンバーのプロフィールURLを探してIDを抽出
+        for a in soup.find_all("a"):
+            href = a.get("href", "")
+            if "/s/n46/artist/" in href:
+                m = re.search(r'/artist/(\d+)', href)
+                if m:
+                    mid = m.group(1)
+                    if mid not in member_ids:
+                        member_ids.append(mid)
+    except Exception as e:
+        print(f"メンバーリストの取得エラー: {e}")
+        
+    print(f"{len(member_ids)}人のメンバーを検出しました。")
+    return member_ids
 
 def parse_date_to_iso(date_str):
     m = re.findall(r'\d+', date_str)
@@ -34,19 +52,15 @@ def parse_article(url):
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     
-    # 乃木坂46仕様: タイトル取得
     title_tag = soup.find(class_="bd--ttl")
     title = title_tag.text.strip() if title_tag else "無題"
 
-    # 乃木坂46仕様: 日付取得
     date_tag = soup.find(class_="bd--d")
     detailed_date = date_tag.text.strip() if date_tag else ""
 
-    # 乃木坂46仕様: 投稿者名取得
     name_tag = soup.find(class_="bd--prof__name")
     author = name_tag.text.strip() if name_tag else ""
             
-    # 乃木坂46仕様: 本文ブロック取得
     article = soup.find(class_="bd--edit")
     if not article:
         return title, author, "", detailed_date
@@ -93,7 +107,6 @@ def generate_feed_for_member(member_id):
     soup = BeautifulSoup(res.text, "html.parser")
     member_name = f"メンバー{member_id}"
     
-    # 乃木坂46仕様: 一覧ページから詳細記事へのリンクを抽出
     post_urls = []
     for a in soup.find_all("a"):
         href = a.get("href", "")
@@ -166,9 +179,17 @@ def generate_feed_for_member(member_id):
 def main():
     print("=== 全メンバーのRSS生成を開始します ===")
     os.makedirs("feeds", exist_ok=True)
-    for member_id in MEMBER_IDS:
+    
+    # メンバーIDを動的に取得
+    member_ids = get_active_member_ids()
+    if not member_ids:
+        print("メンバーIDが取得できなかったため、処理を終了します。")
+        return
+        
+    for member_id in member_ids:
         generate_feed_for_member(member_id)
         time.sleep(1)
+        
     print("=== 全ての処理が完了しました ===")
 
 if __name__ == "__main__":
