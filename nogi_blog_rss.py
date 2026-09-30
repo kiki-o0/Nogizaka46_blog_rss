@@ -118,8 +118,10 @@ def generate_feed_for_member(member_id):
         href = a.get("href", "")
         if "/s/n46/diary/detail/" in href:
             full_url = urljoin(BASE_URL, href)
-            if full_url not in post_urls:
-                post_urls.append(full_url)
+            # URLから「?ima=...」などの変動パラメータを削除して固定化する
+            canonical_url = full_url.split('?')[0]
+            if canonical_url not in post_urls:
+                post_urls.append(canonical_url)
                 
     if not post_urls:
         print(f"[{member_id}] 記事が見つかりません")
