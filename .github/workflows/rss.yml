@@ -33,7 +33,7 @@ jobs:
           python -m pip install requests beautifulsoup4
 
       - name: Generate Atom feed
-        run: python Nogi_blog_rss.py
+        run: python nogi_blog_rss.py
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
