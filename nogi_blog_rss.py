@@ -13,7 +13,7 @@ BASE_URL = "https://www.nogizaka46.com"
 FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
 
 def get_active_member_ids():
-    print("=== メンバーリストを自動取得しています ===")
+    print("=== [実行開始] メンバーリストを自動取得しています ===")
     
     current_time = int(time.time())
     urls_to_check = [
@@ -38,10 +38,10 @@ def get_active_member_ids():
                     if not mid.startswith("10") and mid != "00000":
                         member_ids.add(mid)
         except Exception as e:
-            print(f"取得エラー({url}): {e}")
+            print(f"[警告] メンバー取得エラー({url}): {e}")
             
     member_list = sorted(list(member_ids))
-    print(f"{len(member_list)}人のメンバーを検出しました: {member_list}")
+    print(f"[情報] {len(member_list)}人のメンバーを検出しました: {member_list}")
     return member_list
 
 def parse_date_to_iso(date_str):
@@ -90,7 +90,7 @@ def parse_article(fetch_url):
             
         img_url = urljoin(BASE_URL, src)
         safe_url = escape(img_url)
-        img_html = f'<p><a href="{safe_url}"><img src="{safe_url}" alt="公式ブログ画像"></a></p>'
+        img_html = f'<p><a href="{safe_url}"><img src="{safe_url}" alt=""></a></p>'
         img.replace_with(f"__IMG_START__{img_html}__IMG_END__")
         
     elements = []
@@ -118,7 +118,7 @@ def generate_feed_for_member(member_id):
         res = requests.get(list_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         res.raise_for_status()
     except Exception as e:
-        print(f"[{member_id}] リスト取得エラー: {e}")
+        print(f"[{member_id}] [エラー] リスト取得失敗: {e}")
         return
 
     soup = BeautifulSoup(res.text, "html.parser")
@@ -139,21 +139,21 @@ def generate_feed_for_member(member_id):
             post_urls.append(canonical_url)
                 
     if not post_urls:
-        print(f"[{member_id}] 記事が見つかりません")
+        print(f"[{member_id}] [スキップ] 新しい記事が見つかりません")
         return
         
     entries = []
     feed_updated = None
     
     for article_url in post_urls[:3]:
-        print(f"  -> 記事取得中: {article_url}")
+        print(f"  -> [取得中] 記事URL: {article_url}")
         
         fetch_url = f"{article_url}?_={int(time.time())}"
         try:
             title, author, content, detailed_date = parse_article(fetch_url)
-            print(f"     => タイトル: {title}")
+            print(f"     => [成功] タイトル: {title}")
         except Exception as e:
-            print(f"記事取得エラー ({article_url}): {e}")
+            print(f"     => [エラー] 記事解析失敗 ({article_url}): {e}")
             continue
             
         time.sleep(1)
@@ -200,22 +200,22 @@ def generate_feed_for_member(member_id):
 """
     with open(f"feeds/{feed_filename}", "w", encoding="utf-8") as f:
         f.write(xml)
-    print(f"[{member_id}] {member_name} のフィード生成完了 (feeds/{feed_filename})")
+    print(f"[{member_id}] [完了] {member_name} のフィード生成 (feeds/{feed_filename})")
 
 def main():
-    print("=== 全メンバーのRSS生成を開始します ===")
+    print("=== [処理開始] 全メンバーのRSS生成を開始します ===")
     os.makedirs("feeds", exist_ok=True)
     
     member_ids = get_active_member_ids()
     if not member_ids:
-        print("メンバーIDが取得できなかったため、処理を終了します。")
+        print("[終了] メンバーIDが取得できなかったため、処理を終了します。")
         return
         
     for member_id in member_ids:
         generate_feed_for_member(member_id)
         time.sleep(1)
         
-    print("=== 全ての処理が完了しました ===")
+    print("=== [処理完了] 全てのRSS生成が正常に終了しました ===")
 
 if __name__ == "__main__":
     main()
