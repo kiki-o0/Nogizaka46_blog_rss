@@ -15,7 +15,6 @@ FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
 def get_active_member_ids():
     print("=== メンバーリストを自動取得しています ===")
     
-    # キャッシュ回避のため現在時刻を付与
     current_time = int(time.time())
     urls_to_check = [
         f"{BASE_URL}/s/n46/search/artist?_={current_time}",
@@ -65,11 +64,9 @@ def parse_article(fetch_url):
     if title_tag:
         title = title_tag.get_text(strip=True)
         
-    # クラス名で取得できなかった場合、ページの<title>タグから抽出する強力なフォールバック
     if not title:
         head_title = soup.find("title")
         if head_title:
-            # 例: "やっと会えるね | 乃木坂46 瀬戸口 心月 公式ブログ" -> "やっと会えるね"
             title = head_title.get_text(strip=True).split("|")[0].strip()
             
     if not title:
@@ -116,7 +113,6 @@ def parse_article(fetch_url):
     return title, author, chr(10).join(elements), detailed_date
 
 def generate_feed_for_member(member_id):
-    # キャッシュ回避のため現在時刻を付与
     list_url = f"{BASE_URL}/s/n46/diary/MEMBER/list?ct={member_id}&_={int(time.time())}"
     try:
         res = requests.get(list_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
@@ -130,7 +126,6 @@ def generate_feed_for_member(member_id):
     
     post_urls = []
     
-    # 1. HTMLタグからの抽出
     for a in soup.find_all("a"):
         href = a.get("href", "")
         if "/s/n46/diary/detail/" in href:
@@ -138,7 +133,6 @@ def generate_feed_for_member(member_id):
             if canonical_url not in post_urls:
                 post_urls.append(canonical_url)
                 
-    # 2. Next.jsのJSONデータからの抽出（保険処理）
     for m in re.findall(r'/s/n46/diary/detail/(\d+)', res.text):
         canonical_url = f"{BASE_URL}/s/n46/diary/detail/{m}"
         if canonical_url not in post_urls:
@@ -154,10 +148,10 @@ def generate_feed_for_member(member_id):
     for article_url in post_urls[:3]:
         print(f"  -> 記事取得中: {article_url}")
         
-        # 記事取得時もキャッシュ回避用パラメータを付与してリクエストする
         fetch_url = f"{article_url}?_={int(time.time())}"
         try:
             title, author, content, detailed_date = parse_article(fetch_url)
+            print(f"     => タイトル: {title}")
         except Exception as e:
             print(f"記事取得エラー ({article_url}): {e}")
             continue
@@ -172,7 +166,6 @@ def generate_feed_for_member(member_id):
         if not feed_updated:
             feed_updated = entry_updated
         
-        # 登録するリンク(ID)自体は変動しないクリーンなURL（article_url）を使用する
         entry = f"""
   <entry>
     <title>{escape(title)}</title>
