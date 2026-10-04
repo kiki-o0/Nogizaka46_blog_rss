@@ -60,16 +60,28 @@ def parse_article(fetch_url):
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     
-    title_tag = soup.find(class_="bd--ttl")
-    title = title_tag.text.strip() if title_tag else "無題"
-
-    date_tag = soup.find(class_="bd--d")
-    detailed_date = date_tag.text.strip() if date_tag else ""
-
-    name_tag = soup.find(class_="bd--prof__name")
-    author = name_tag.text.strip() if name_tag else ""
+    title = ""
+    title_tag = soup.find(class_=["bd--ttl", "title", "entrytitle"])
+    if title_tag:
+        title = title_tag.get_text(strip=True)
+        
+    # クラス名で取得できなかった場合、ページの<title>タグから抽出する強力なフォールバック
+    if not title:
+        head_title = soup.find("title")
+        if head_title:
+            # 例: "やっと会えるね | 乃木坂46 瀬戸口 心月 公式ブログ" -> "やっと会えるね"
+            title = head_title.get_text(strip=True).split("|")[0].strip()
             
-    article = soup.find(class_="bd--edit")
+    if not title:
+        title = "無題"
+
+    date_tag = soup.find(class_=["bd--d", "date"])
+    detailed_date = date_tag.get_text(strip=True) if date_tag else ""
+
+    name_tag = soup.find(class_=["bd--prof__name", "name"])
+    author = name_tag.get_text(strip=True) if name_tag else ""
+            
+    article = soup.find(class_=["bd--edit", "entrybody"])
     if not article:
         return title, author, "", detailed_date
         
