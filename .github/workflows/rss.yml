@@ -3,7 +3,7 @@ name: Generate and deploy nogizaka blog all RSS
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/45 * * * *"
+    - cron: "*/46 * * * *"
 
 permissions:
   contents: write
