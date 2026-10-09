@@ -14,37 +14,58 @@ BASE_URL = "https://www.nogizaka46.com"
 FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
 STATE_FILE = "last_blogs.json"
 
-def get_active_member_ids():
-    print("=== [実行開始] メンバーリストを自動取得しています ===")
+MEMBER_MAPPING = {
+    # 3期生
+    "36749": "伊藤 理々杏",
+    "36750": "岩本 蓮加",
     
-    current_time = int(time.time())
-    urls_to_check = [
-        f"{BASE_URL}/s/n46/search/artist?_={current_time}",
-        f"{BASE_URL}/s/n46/diary/MEMBER?_={current_time}"
-    ]
-    member_ids = set()
+    # 期別・スタッフ
+    "40001": "新4期生",
+    "40003": "運営スタッフ",
+    "40004": "3期生",
+    "40005": "4期生",
+    "40007": "5期生",
+    "40008": "6期生",
     
-    for url in urls_to_check:
-        try:
-            res = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-            res.raise_for_status()
-            
-            patterns = [
-                r'"code"\s*:\s*"?(\d{5})"?',
-                r'/s/n46/artist/(\d{5})',
-                r'[\?&]ct=(\d{5})'
-            ]
-            
-            for p in patterns:
-                for mid in re.findall(p, res.text):
-                    if not mid.startswith("10") and mid != "00000":
-                        member_ids.add(mid)
-        except Exception as e:
-            print(f"[警告] メンバー取得エラー({url}): {e}")
-            
-    member_list = sorted(list(member_ids))
-    print(f"[情報] {len(member_list)}人のメンバーを検出しました: {member_list}")
-    return member_list
+    # 4期生
+    "48006": "遠藤 さくら",
+    "48008": "賀喜 遥香",
+    "48010": "金川 紗耶",
+    "48013": "柴田 柚菜",
+    "48015": "田村 真佑",
+    "48017": "筒井 あやめ",
+    
+    # 新4期生
+    "55383": "黒見 明香",
+    "55385": "林 瑠奈",
+    "55387": "弓木 奈於",
+    
+    # 5期生（五十音順）
+    "55396": "五百城 茉央",
+    "55397": "池田 瑛紗",
+    "55390": "一ノ瀬 美空",
+    "55389": "井上 和",
+    "55401": "岡本 姫奈",
+    "55392": "小川 彩",
+    "55394": "奥田 いろは",
+    "55400": "川﨑 桜",
+    "55391": "菅原 咲月",
+    "55393": "冨里 奈央",
+    "55395": "中西 アルノ",
+    
+    # 6期生
+    "63101": "愛宕 心響",
+    "63102": "大越 ひなの",
+    "63103": "小津 玲奈",
+    "63104": "海邉 朱莉",
+    "63105": "川端 晃菜",
+    "63106": "鈴木 佑捺",
+    "63107": "瀬戸口 心月",
+    "63108": "長嶋 凛桜",
+    "63109": "増田 三莉音",
+    "63110": "森平 麗心",
+    "63111": "矢田 萌華"
+}
 
 def parse_date_to_iso(date_str):
     m = re.findall(r'\d+', date_str)
@@ -76,13 +97,10 @@ def parse_article(fetch_url):
 
     date_tag = soup.find(class_=["bd--d", "date"])
     detailed_date = date_tag.get_text(strip=True) if date_tag else ""
-
-    name_tag = soup.find(class_=["bd--prof__name", "name"])
-    author = name_tag.get_text(strip=True) if name_tag else ""
             
     article = soup.find(class_=["bd--edit", "entrybody"])
     if not article:
-        return title, author, "", detailed_date
+        return title, "", detailed_date
         
     for img in article.find_all("img"):
         src = img.get("src", "")
@@ -114,11 +132,13 @@ def parse_article(fetch_url):
                     linked_line = re.sub(r'(https?://[a-zA-Z0-9./?=_-]+)', r'<a href="\1" target="_blank">\1</a>', safe_line)
                     elements.append("<p>" + linked_line + "</p>")
                     
-    return title, author, chr(10).join(elements), detailed_date
+    return title, chr(10).join(elements), detailed_date
 
 def generate_feed_for_member(member_id, state):
+    member_name = MEMBER_MAPPING.get(member_id, f"メンバー{member_id}")
+    
     list_url = f"{BASE_URL}/s/n46/diary/MEMBER/list?ct={member_id}&_={int(time.time())}"
-    print(f"[{member_id}] [RSS取得中] ブログ一覧にアクセスしています...")
+    print(f"[{member_id}] [RSS取得中] {member_name} のブログ一覧にアクセスしています...")
     try:
         res = requests.get(list_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         res.raise_for_status()
@@ -142,7 +162,7 @@ def generate_feed_for_member(member_id, state):
             post_urls.append(canonical_url)
                 
     if not post_urls:
-        print(f"[{member_id}] [スキップ] 新しい記事が見つかりません")
+        print(f"[{member_id}] [スキップ] {member_name} の新しい記事が見つかりません")
         return
         
     member_state = state.get(member_id, [])
@@ -154,9 +174,8 @@ def generate_feed_for_member(member_id, state):
     
     new_member_state = []
     feed_updated = None
-    member_name = f"メンバー{member_id}"
     
-    print(f"[{member_id}] [解析中] 記事を処理します（最大15件）")
+    print(f"[{member_id}] [解析中] {member_name} の記事を処理します（最大15件）")
     
     for article_url in post_urls[:15]:
         if article_url in known_urls:
@@ -164,24 +183,19 @@ def generate_feed_for_member(member_id, state):
             new_member_state.append(known_data)
             if not feed_updated:
                 feed_updated = known_data["updated"]
-            if member_name.startswith("メンバー") and known_data.get("author"):
-                member_name = known_data["author"]
             print(f"  -> [高速スキップ] 既知の記事です（データ復元）: {known_data.get('title', '無題')}")
             continue
             
         print(f"  -> [新規取得中] 記事URL: {article_url}")
         fetch_url = f"{article_url}?_={int(time.time())}"
         try:
-            title, author, content, detailed_date = parse_article(fetch_url)
+            title, content, detailed_date = parse_article(fetch_url)
             print(f"     => [成功] タイトル: {title}")
         except Exception as e:
             print(f"     => [エラー] 記事解析失敗 ({article_url}): {e}")
             continue
             
         time.sleep(3)
-        
-        if author and member_name.startswith("メンバー"):
-            member_name = author
             
         entry_updated = parse_date_to_iso(detailed_date)
         
@@ -192,8 +206,7 @@ def generate_feed_for_member(member_id, state):
             "url": article_url,
             "title": title,
             "updated": entry_updated,
-            "content": content,
-            "author": author
+            "content": content
         })
 
     if not new_member_state:
@@ -251,13 +264,8 @@ def main():
     else:
         print("-> [読込] 過去の履歴がありません。新規で全取得します。")
         state = {}
-    
-    member_ids = get_active_member_ids()
-    if not member_ids:
-        print("[終了] メンバーIDが取得できなかったため、処理を終了します。")
-        return
         
-    for member_id in member_ids:
+    for member_id in MEMBER_MAPPING.keys():
         generate_feed_for_member(member_id, state)
         time.sleep(3)
         
