@@ -1,6 +1,7 @@
 import os
 import re
 import time
+import json
 from datetime import datetime, timezone
 from urllib.parse import urljoin
 from xml.sax.saxutils import escape
@@ -11,6 +12,7 @@ from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.nogizaka46.com"
 FEED_BASE_URL = "https://kiki-o0.github.io/Nogizaka46_blog_rss/"
+STATE_FILE = "last_blogs.json"
 
 def get_active_member_ids():
     print("=== [実行開始] メンバーリストを自動取得しています ===")
@@ -108,12 +110,15 @@ def parse_article(fetch_url):
             for line in part.split("\n"):
                 line = line.strip()
                 if line:
-                    elements.append("<p>" + escape(line) + "</p>")
+                    safe_line = escape(line)
+                    linked_line = re.sub(r'(https?://[a-zA-Z0-9./?=_-]+)', r'<a href="\1" target="_blank">\1</a>', safe_line)
+                    elements.append("<p>" + linked_line + "</p>")
                     
     return title, author, chr(10).join(elements), detailed_date
 
-def generate_feed_for_member(member_id):
+def generate_feed_for_member(member_id, state):
     list_url = f"{BASE_URL}/s/n46/diary/MEMBER/list?ct={member_id}&_={int(time.time())}"
+    print(f"[{member_id}] [RSS取得中] ブログ一覧にアクセスしています...")
     try:
         res = requests.get(list_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         res.raise_for_status()
@@ -122,10 +127,8 @@ def generate_feed_for_member(member_id):
         return
 
     soup = BeautifulSoup(res.text, "html.parser")
-    member_name = f"メンバー{member_id}"
     
     post_urls = []
-    
     for a in soup.find_all("a"):
         href = a.get("href", "")
         if "/s/n46/diary/detail/" in href:
@@ -142,12 +145,31 @@ def generate_feed_for_member(member_id):
         print(f"[{member_id}] [スキップ] 新しい記事が見つかりません")
         return
         
-    entries = []
-    feed_updated = None
-    
-    for article_url in post_urls[:3]:
-        print(f"  -> [取得中] 記事URL: {article_url}")
+    member_state = state.get(member_id, [])
+    if not isinstance(member_state, list):
+        print(f"[{member_id}] [警告] 古い形式の記憶を見つけたため、新しく作り直します。")
+        member_state = []
         
+    known_urls = { entry["url"]: entry for entry in member_state if isinstance(entry, dict) and "url" in entry }
+    
+    new_member_state = []
+    feed_updated = None
+    member_name = f"メンバー{member_id}"
+    
+    print(f"[{member_id}] [解析中] 記事を処理します（最大15件）")
+    
+    for article_url in post_urls[:15]:
+        if article_url in known_urls:
+            known_data = known_urls[article_url]
+            new_member_state.append(known_data)
+            if not feed_updated:
+                feed_updated = known_data["updated"]
+            if member_name.startswith("メンバー") and known_data.get("author"):
+                member_name = known_data["author"]
+            print(f"  -> [高速スキップ] 既知の記事です（データ復元）: {known_data.get('title', '無題')}")
+            continue
+            
+        print(f"  -> [新規取得中] 記事URL: {article_url}")
         fetch_url = f"{article_url}?_={int(time.time())}"
         try:
             title, author, content, detailed_date = parse_article(fetch_url)
@@ -156,36 +178,46 @@ def generate_feed_for_member(member_id):
             print(f"     => [エラー] 記事解析失敗 ({article_url}): {e}")
             continue
             
-        time.sleep(1)
+        time.sleep(3)
         
-        if author and member_name == f"メンバー{member_id}":
+        if author and member_name.startswith("メンバー"):
             member_name = author
             
         entry_updated = parse_date_to_iso(detailed_date)
         
         if not feed_updated:
             feed_updated = entry_updated
-        
-        entry = f"""
-  <entry>
-    <title>{escape(title)}</title>
-    <id>{escape(article_url)}</id>
-    <link href="{escape(article_url)}"/>
-    <updated>{escape(entry_updated)}</updated>
-    <author>
-      <name>{escape(member_name)}</name>
-    </author>
-    <content type="html"><![CDATA[
-{content}
-    ]]></content>
-  </entry>"""
-        entries.append(entry)
+            
+        new_member_state.append({
+            "url": article_url,
+            "title": title,
+            "updated": entry_updated,
+            "content": content,
+            "author": author
+        })
 
-    if not entries:
+    if not new_member_state:
+        print(f"[{member_id}] [スキップ] 有効なブログ記事はありませんでした")
         return
         
     if not feed_updated:
         feed_updated = datetime.now(timezone.utc).isoformat()
+        
+    entries_xml = ""
+    for entry_data in new_member_state:
+        entries_xml += f"""
+  <entry>
+    <title>{escape(entry_data['title'])}</title>
+    <id>{escape(entry_data['url'])}</id>
+    <link href="{escape(entry_data['url'])}"/>
+    <updated>{escape(entry_data['updated'])}</updated>
+    <author>
+      <name>{escape(member_name)}</name>
+    </author>
+    <content type="html"><![CDATA[
+{entry_data['content']}
+    ]]></content>
+  </entry>"""
         
     feed_filename = f"feed_{member_id}.xml"
     feed_url = f"{FEED_BASE_URL}{feed_filename}"
@@ -195,16 +227,30 @@ def generate_feed_for_member(member_id):
   <title>乃木坂46｜{escape(member_name)} 公式ブログ</title>
   <id>{escape(feed_url)}</id>
   <updated>{escape(feed_updated)}</updated>
-  <link href="{escape(feed_url)}" rel="self"/>{"".join(entries)}
+  <link href="{escape(feed_url)}" rel="self"/>{entries_xml}
 </feed>
 """
     with open(f"feeds/{feed_filename}", "w", encoding="utf-8") as f:
         f.write(xml)
     print(f"[{member_id}] [完了] {member_name} のフィード生成 (feeds/{feed_filename})")
+    
+    state[member_id] = new_member_state
 
 def main():
     print("=== [処理開始] 全メンバーのRSS生成を開始します ===")
     os.makedirs("feeds", exist_ok=True)
+    
+    if os.path.exists(STATE_FILE):
+        print("-> [読込] 過去のブログ履歴データを読み込みます...")
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except Exception as e:
+            print(f"-> [警告] 履歴ファイルの読み込みに失敗しました。新規で作成します: {e}")
+            state = {}
+    else:
+        print("-> [読込] 過去の履歴がありません。新規で全取得します。")
+        state = {}
     
     member_ids = get_active_member_ids()
     if not member_ids:
@@ -212,8 +258,15 @@ def main():
         return
         
     for member_id in member_ids:
-        generate_feed_for_member(member_id)
-        time.sleep(1)
+        generate_feed_for_member(member_id, state)
+        time.sleep(3)
+        
+    print(f"=== [保存] ブログ履歴データを {STATE_FILE} に保存します ===")
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"-> [エラー] 履歴ファイルの保存に失敗しました: {e}")
         
     print("=== [処理完了] 全てのRSS生成が正常に終了しました ===")
 
