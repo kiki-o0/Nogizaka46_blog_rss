@@ -19,14 +19,6 @@ MEMBER_MAPPING = {
     "36749": "伊藤 理々杏",
     "36750": "岩本 蓮加",
     
-    # 期別・スタッフ
-    "40001": "新4期生",
-    "40003": "運営スタッフ",
-    "40004": "3期生",
-    "40005": "4期生",
-    "40007": "5期生",
-    "40008": "6期生",
-    
     # 4期生
     "48006": "遠藤 さくら",
     "48008": "賀喜 遥香",
@@ -82,11 +74,14 @@ def parse_article(fetch_url):
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
     
+    # タイトル抽出（空タグ対策）
     title = ""
-    title_tag = soup.find(class_=["bd--ttl", "title", "entrytitle"])
-    if title_tag:
-        title = title_tag.get_text(strip=True)
-        
+    for tag in soup.find_all(class_=["bd--ttl", "title", "entrytitle"]):
+        text = tag.get_text(strip=True)
+        if text:
+            title = text
+            break
+            
     if not title:
         head_title = soup.find("title")
         if head_title:
@@ -95,8 +90,13 @@ def parse_article(fetch_url):
     if not title:
         title = "無題"
 
-    date_tag = soup.find(class_=["bd--d", "date"])
-    detailed_date = date_tag.get_text(strip=True) if date_tag else ""
+    # 日付抽出（必ず数字が含まれているタグだけを取得）
+    detailed_date = ""
+    for tag in soup.find_all(class_=["bd--d", "date"]):
+        text = tag.get_text(strip=True)
+        if re.search(r'\d{4}', text):
+            detailed_date = text
+            break
             
     article = soup.find(class_=["bd--edit", "entrybody"])
     if not article:
@@ -180,13 +180,18 @@ def generate_feed_for_member(member_id, state):
     for article_url in post_urls[:15]:
         if article_url in known_urls:
             known_data = known_urls[article_url]
-            new_member_state.append(known_data)
-            if not feed_updated:
-                feed_updated = known_data["updated"]
-            print(f"  -> [高速スキップ] 既知の記事です（データ復元）: {known_data.get('title', '無題')}")
-            continue
+            # 前回取得時に正しい日付が取れなかった（マイクロ秒が含まれている等）場合は再取得する
+            if "." not in known_data.get("updated", "") and "+09:00" in known_data.get("updated", ""):
+                new_member_state.append(known_data)
+                if not feed_updated:
+                    feed_updated = known_data["updated"]
+                print(f"  -> [高速スキップ] 既知の記事です: {known_data.get('title', '無題')}")
+                continue
+            else:
+                print(f"  -> [修復取得中] 過去のタイムスタンプが不正なため再取得します: {article_url}")
+        else:
+            print(f"  -> [新規取得中] 記事URL: {article_url}")
             
-        print(f"  -> [新規取得中] 記事URL: {article_url}")
         fetch_url = f"{article_url}?_={int(time.time())}"
         try:
             title, content, detailed_date = parse_article(fetch_url)
